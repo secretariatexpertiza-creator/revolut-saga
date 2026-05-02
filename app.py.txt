@@ -3,6 +3,7 @@ import pdfplumber
 import re
 import requests
 from datetime import datetime
+import os
 
 app = Flask(__name__)
 
@@ -56,7 +57,7 @@ def parse_pdf(file):
     data = []
 
     with pdfplumber.open(file) as pdf:
-        text = "\n".join([p.extract_text() for p in pdf.pages])
+        text = "\n".join([p.extract_text() for p in pdf.pages if p.extract_text()])
 
     blocks = re.split(r'\n(?=\d{1,2}\s\w{3}\.\s\d{4})', text)
 
@@ -93,18 +94,22 @@ def parse_pdf(file):
 
     return data
 
-@app.route("/", methods=["GET","POST"])
+@app.route("/", methods=["GET", "POST"])
 def home():
     if request.method == "POST":
-        f = request.files["file"]
+        f = request.files.get("file")
+
+        if not f:
+            return "Nu ai incarcat fisier", 400
+
         tx = parse_pdf(f)
 
-        out = "saga.txt"
+        out_file = "saga.txt"
 
-        with open(out, "w") as g:
+        with open(out_file, "w", encoding="utf-8") as g:
             nr = 1
 
-            for d,t,eur,ron,exp in tx:
+            for d, t, eur, ron, exp in tx:
 
                 # INCASARE
                 if t == "inc":
@@ -122,14 +127,12 @@ def home():
                     kurs = get_bnr(d)
                     diff = round(eur * kurs - ron, 2)
 
-                    # 581.2
                     g.write(f"{d};NC;{nr};Schimb EUR-RON;581.2;5124.3;{eur};EUR\n")
                     nr += 1
 
                     g.write(f"{d};NC;{nr};Schimb EUR-RON;5121.3;581.2;{ron};RON\n")
                     nr += 1
 
-                    # diferenta curs
                     if diff > 0:
                         g.write(f"{d};NC;{nr};Pierdere curs;665;581.2;{diff};RON\n")
                     elif diff < 0:
@@ -137,9 +140,11 @@ def home():
 
                     nr += 1
 
-        return send_file(out, as_attachment=True)
+        return send_file(out_file, as_attachment=True)
 
     return render_template_string(HTML)
 
+# 🔥 IMPORTANT pentru Render
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
